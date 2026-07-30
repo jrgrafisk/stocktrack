@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stocktrack – øv dig i at handle aktier</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>📈 Stocktrack</h1>
+  <p class="subtitle">Øv dig i at handle aktier med legetøjspenge – rigtige kurser, ingen risiko</p>
+</header>
+
+<main>
+  <section id="account-card" class="card">
+    <h2>Din konto</h2>
+    <div class="stats">
+      <div><span class="label">Kontant</span><span id="stat-cash" class="value">–</span></div>
+      <div><span class="label">Porteføljeværdi</span><span id="stat-equity" class="value">–</span></div>
+      <div><span class="label">Købekraft</span><span id="stat-buying-power" class="value">–</span></div>
+    </div>
+  </section>
+
+  <section id="trade-card" class="card">
+    <h2>Handl</h2>
+    <form id="trade-form">
+      <input type="text" id="symbol-input" placeholder="Ticker, fx AAPL" autocomplete="off" required>
+      <span id="quote-display" class="quote">–</span>
+      <input type="number" id="qty-input" placeholder="Antal aktier" min="1" step="1" required>
+      <div class="trade-buttons">
+        <button type="submit" data-side="buy" class="btn-buy">Køb</button>
+        <button type="submit" data-side="sell" class="btn-sell">Sælg</button>
+      </div>
+    </form>
+    <p id="trade-message" class="message"></p>
+  </section>
+
+  <section id="positions-card" class="card">
+    <h2>Beholdning</h2>
+    <table id="positions-table">
+      <thead>
+        <tr><th>Ticker</th><th>Antal</th><th>Snitkøb</th><th>Kurs nu</th><th>Værdi</th><th>Gevinst/tab</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="orders-card" class="card">
+    <h2>Handelshistorik</h2>
+    <table id="orders-table">
+      <thead>
+        <tr><th>Tidspunkt</th><th>Ticker</th><th>Side</th><th>Antal</th><th>Kurs</th><th>Status</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
