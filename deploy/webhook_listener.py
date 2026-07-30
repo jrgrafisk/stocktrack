@@ -19,9 +19,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
 
-        signature = self.headers.get("X-Gitea-Signature") or self.headers.get("X-Forgejo-Signature") or ""
         expected = hmac.new(SECRET, body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected):
+
+        github_sig = self.headers.get("X-Hub-Signature-256", "")
+        gitea_sig = self.headers.get("X-Gitea-Signature") or self.headers.get("X-Forgejo-Signature") or ""
+
+        valid = hmac.compare_digest(github_sig, "sha256=" + expected) or hmac.compare_digest(gitea_sig, expected)
+        if not valid:
             self.send_response(403)
             self.end_headers()
             self.wfile.write(b"invalid signature")
