@@ -132,3 +132,42 @@ th { color: var(--muted); font-weight: 500; }
 .pl-negative { color: var(--red); }
 
 #positions-card, #orders-card { overflow-x: auto; }
+
+#watchlist-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+#watchlist-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  text-transform: uppercase;
+}
+
+#watchlist-form button {
+  flex: 0 0 auto;
+  background: var(--accent);
+  padding: 0.5rem 1rem;
+}
+
+#watchlist-table tbody tr { cursor: pointer; }
+#watchlist-table tbody tr:hover { background: rgba(74, 144, 226, 0.08); }
+
+.remove-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  padding: 0 0.3rem;
+  flex: none;
+  width: auto;
+}
+.remove-btn:hover { color: var(--red); }
+
+.chart-wrap { margin-top: 1.25rem; }
+.chart-title { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem; }

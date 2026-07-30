@@ -33,6 +33,22 @@ def quote(symbol: str):
     return {"symbol": symbol.upper(), "price": price}
 
 
+@app.get("/api/quotes")
+def quotes(symbols: str):
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        raise HTTPException(status_code=400, detail="symbols mangler")
+    return alpaca.get_quotes_with_change(symbol_list)
+
+
+@app.get("/api/bars/{symbol}")
+def bars(symbol: str, days: int = 30):
+    try:
+        return alpaca.get_daily_bars(symbol.upper(), days=days)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Kunne ikke hente historik for {symbol}: {e}")
+
+
 @app.get("/api/positions")
 def positions():
     return alpaca.get_positions()

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stocktrack – øv dig i at handle aktier</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <header>
@@ -19,6 +20,24 @@
       <div><span class="label">Kontant</span><span id="stat-cash" class="value">–</span></div>
       <div><span class="label">Porteføljeværdi</span><span id="stat-equity" class="value">–</span></div>
       <div><span class="label">Købekraft</span><span id="stat-buying-power" class="value">–</span></div>
+    </div>
+  </section>
+
+  <section id="tracker-card" class="card">
+    <h2>Tracker</h2>
+    <form id="watchlist-form">
+      <input type="text" id="watchlist-input" placeholder="Tilføj ticker, fx NVDA" autocomplete="off">
+      <button type="submit">Tilføj</button>
+    </form>
+    <table id="watchlist-table">
+      <thead>
+        <tr><th>Ticker</th><th>Kurs</th><th>Ændring</th><th>%</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="chart-wrap">
+      <p id="chart-title" class="chart-title">Klik på en aktie for at se prisudvikling</p>
+      <canvas id="price-chart" height="220"></canvas>
     </div>
   </section>
 
