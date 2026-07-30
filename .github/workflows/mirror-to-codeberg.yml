@@ -1,0 +1,24 @@
+name: Mirror to Codeberg
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Codeberg
+        env:
+          CODEBERG_DEPLOY_KEY: ${{ secrets.CODEBERG_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$CODEBERG_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 codeberg.org >> ~/.ssh/known_hosts
+          git remote add codeberg ssh://git@codeberg.org/jrsolutions/stocktrack.git
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes" git push codeberg HEAD:main
