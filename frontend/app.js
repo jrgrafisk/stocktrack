@@ -1,10 +1,22 @@
 // ======================================================
 // SHARED HELPERS
 // ======================================================
-const usdFmt = new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtUSD = (v) => usdFmt.format(v);
-const fmtUSD0 = (v) => (v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v)).toLocaleString('da-DK');
+const moneyFmtCache = {};
+function fmtMoney(v, currency = 'USD') {
+  if (!moneyFmtCache[currency]) {
+    moneyFmtCache[currency] = new Intl.NumberFormat('da-DK', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  return moneyFmtCache[currency].format(v);
+}
+const CURRENCY_PREFIX = { USD: '$', DKK: 'kr ', EUR: '€' };
+function fmtMoney0(v, currency = 'USD') {
+  const sign = v < 0 ? '-' : '';
+  const prefix = CURRENCY_PREFIX[currency] || currency + ' ';
+  return sign + prefix + Math.round(Math.abs(v)).toLocaleString('da-DK');
+}
 const fmtPct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+const isYahooSymbol = (s) => s.includes('.');
+const exchangeTZ = (s) => isYahooSymbol(s) ? 'Europe/Copenhagen' : 'America/New_York';
 
 function esc(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -25,8 +37,8 @@ function notif(msg, type) {
   setTimeout(() => el.remove(), 3000);
 }
 
-function fmtClock(ms) {
-  return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' }).format(new Date(ms));
+function fmtClock(ms, tz) {
+  return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz || 'America/New_York' }).format(new Date(ms));
 }
 
 // ======================================================
@@ -36,7 +48,7 @@ let mode = 'live';       // 'live' | 'replay'
 let symbol = 'AAPL';
 
 // Live mode
-const live = { candles: [], price: null, prevClose: null, positions: [], refreshTimer: null };
+const live = { candles: [], price: null, prevClose: null, currency: 'USD', positions: [], refreshTimer: null };
 
 // Replay mode: full day's candles plus a local practice ledger, exactly
 // like a real account but disposable — reset on every "Genstart" or symbol
@@ -182,6 +194,7 @@ async function loadLive() {
     const quote = await fetchJSON(`/api/quote/${symbol}`);
     live.price = quote.price;
     live.prevClose = quote.prev_close;
+    live.currency = quote.currency || 'USD';
   } catch (e) {
     setStatus(`<span class="err">Kunne ikke hente ${esc(symbol)}: ${esc(e.message)}</span>`);
     return;
@@ -207,6 +220,7 @@ async function pollLive() {
     const quote = await fetchJSON(`/api/quote/${symbol}`);
     live.price = quote.price;
     live.prevClose = quote.prev_close;
+    live.currency = quote.currency || 'USD';
     try { live.candles = await fetchJSON(`/api/replay/${symbol}?day=${todayStr()}`); } catch (e) { /* not open yet */ }
     renderLiveHeader();
     drawChart();
@@ -223,9 +237,9 @@ async function refreshLiveAccountAndPositions() {
     ]);
     live.positions = positions;
     const openPl = positions.reduce((s, p) => s + p.unrealized_pl, 0);
-    document.getElementById('hbal').textContent = fmtUSD0(account.equity);
+    document.getElementById('hbal').textContent = fmtMoney0(account.equity, 'USD');
     const pnlEl = document.getElementById('hpnl');
-    pnlEl.textContent = `${openPl >= 0 ? '+' : ''}${fmtUSD0(openPl)}`;
+    pnlEl.textContent = `${openPl >= 0 ? '+' : ''}${fmtMoney0(openPl, 'USD')}`;
     pnlEl.className = `hstat-value ${openPl >= 0 ? 'up' : 'dn'}`;
     document.getElementById('hwr').textContent = '–';
     document.getElementById('brand-sub').textContent = 'LIVE-HANDEL · ALPACA PAPER TRADING';
@@ -242,28 +256,35 @@ function todayStr() {
 function renderLiveHeader() {
   const price = live.price, prev = live.prevClose || price;
   const chg = price - prev, pct = prev ? (chg / prev * 100) : 0;
+  const cur = live.currency;
+  const tradable = !isYahooSymbol(symbol);
 
-  document.getElementById('price-now').textContent = fmtUSD(price);
+  document.getElementById('price-now').textContent = fmtMoney(price, cur);
   document.getElementById('price-now').className = `price-now ${chg >= 0 ? 'up' : 'dn'}`;
-  document.getElementById('price-meta').textContent = `${chg >= 0 ? '+' : ''}${fmtUSD(chg)} (${fmtPct(pct)}) vs. forrige luk`;
+  document.getElementById('price-meta').textContent = `${chg >= 0 ? '+' : ''}${fmtMoney(chg, cur)} (${fmtPct(pct)}) vs. forrige luk`;
   document.getElementById('price-meta').className = `price-meta ${chg >= 0 ? 'up' : 'dn'}`;
 
   const bars = live.candles;
   if (bars.length) {
-    document.getElementById('ks-open').textContent = fmtUSD(bars[0].o);
-    document.getElementById('ks-high').textContent = fmtUSD(Math.max(...bars.map(b => b.h)));
-    document.getElementById('ks-low').textContent = fmtUSD(Math.min(...bars.map(b => b.l)));
-    document.getElementById('clock').textContent = fmtClock(new Date(bars[bars.length - 1].t).getTime());
+    document.getElementById('ks-open').textContent = fmtMoney(bars[0].o, cur);
+    document.getElementById('ks-high').textContent = fmtMoney(Math.max(...bars.map(b => b.h)), cur);
+    document.getElementById('ks-low').textContent = fmtMoney(Math.min(...bars.map(b => b.l)), cur);
+    document.getElementById('clock').textContent = fmtClock(new Date(bars[bars.length - 1].t).getTime(), exchangeTZ(symbol));
     document.getElementById('candle-info').textContent = `${bars.length} min-stænger i dag`;
     document.getElementById('prog-fill').style.width = '100%';
   }
-  document.getElementById('ks-prev').textContent = fmtUSD(prev);
+  document.getElementById('ks-prev').textContent = fmtMoney(prev, cur);
   document.getElementById('ks-close-label').textContent = 'SENESTE';
-  document.getElementById('ks-close').textContent = fmtUSD(price);
+  document.getElementById('ks-close').textContent = fmtMoney(price, cur);
   document.getElementById('ks-chg').textContent = fmtPct(pct);
   document.getElementById('mkt-status').textContent = 'LIVE';
   document.getElementById('mkt-status').className = 'market-status open';
-  document.getElementById('asset-full').textContent = 'US-aktie · USD · Alpaca paper trading';
+  document.getElementById('asset-full').textContent = tradable
+    ? 'US-aktie · USD · Alpaca paper trading'
+    : `${cur}-aktie · kun visning — brug Replay-træning for at handle`;
+  amountInput.disabled = !tradable;
+  document.querySelectorAll('.btn-long, .btn-short').forEach(b => b.disabled = !tradable);
+  updateTradeInfo();
 }
 
 function renderPositionsLive(positions) {
@@ -276,9 +297,9 @@ function renderPositionsLive(positions) {
       <div class="pos-dir ${dir}">${dir.toUpperCase()}</div>
       <div class="pos-detail">
         <div class="sym">${esc(p.symbol)}</div>
-        <div class="meta">@ ${fmtUSD(p.avg_entry_price)} · ${Math.abs(p.qty)} stk.</div>
+        <div class="meta">@ ${fmtMoney(p.avg_entry_price, 'USD')} · ${Math.abs(p.qty)} stk.</div>
       </div>
-      <div class="pos-pnl" style="color:${col}">${p.unrealized_pl >= 0 ? '+' : ''}${fmtUSD0(p.unrealized_pl)}<br><span style="font-size:9px">${fmtPct(p.unrealized_plpc * 100)}</span></div>
+      <div class="pos-pnl" style="color:${col}">${p.unrealized_pl >= 0 ? '+' : ''}${fmtMoney0(p.unrealized_pl, 'USD')}<br><span style="font-size:9px">${fmtPct(p.unrealized_plpc * 100)}</span></div>
       <button class="btn-x" onclick="closeLivePosition('${esc(p.symbol)}')">LUK</button>
     </div>`;
   }).join('');
@@ -290,7 +311,7 @@ function renderHistoryLive(orders) {
   if (!filled.length) { el.innerHTML = '<div class="empty-msg">Ingen handler endnu</div>'; return; }
   el.innerHTML = filled.slice(0, 20).map(o => `
     <div class="hist-row">
-      <span>${o.side === 'buy' ? 'LONG' : 'SHORT'} ${esc(o.symbol)} @ ${fmtUSD(o.filled_avg_price)}</span>
+      <span>${o.side === 'buy' ? 'LONG' : 'SHORT'} ${esc(o.symbol)} @ ${fmtMoney(o.filled_avg_price, 'USD')}</span>
       <span>${o.qty} stk. · ${esc(o.status)}</span>
     </div>
   `).join('');
@@ -309,14 +330,21 @@ async function closeLivePosition(sym) {
 // ======================================================
 // REPLAY MODE
 // ======================================================
-let R = { open: null, prev: null, high: null, low: null, close: null, dayLabel: '' };
+let R = { open: null, prev: null, high: null, low: null, close: null, dayLabel: '', currency: 'USD' };
 
 async function loadReplay() {
   setStatus('Henter historisk dag …');
   clearInterval(g.loop);
   document.querySelector('.end-screen')?.remove();
+  amountInput.disabled = false;
+  document.querySelectorAll('.btn-long, .btn-short').forEach(b => b.disabled = false);
   try {
-    replayCandles = await fetchJSON(`/api/replay/${symbol}`);
+    const [candles, quote] = await Promise.all([
+      fetchJSON(`/api/replay/${symbol}`),
+      fetchJSON(`/api/quote/${symbol}`).catch(() => ({ currency: isYahooSymbol(symbol) ? 'DKK' : 'USD' })),
+    ]);
+    replayCandles = candles;
+    R.currency = quote.currency || 'USD';
     R.open = replayCandles[0].o;
     R.high = Math.max(...replayCandles.map(b => b.h));
     R.low = Math.min(...replayCandles.map(b => b.l));
@@ -327,7 +355,7 @@ async function loadReplay() {
     g = { balance: 10000, pnl: 0, wins: 0, losses: 0, idx: 0, positions: [], history: [], speed: 1000, paused: false, pid: 0, loop: null };
     document.getElementById('asset-ticker').textContent = symbol;
     document.getElementById('brand-sub').textContent = 'REPLAY-TRÆNING · ' + R.dayLabel.toUpperCase();
-    document.getElementById('asset-full').textContent = 'Øvelseskonto · $10.000 · nulstilles hver session';
+    document.getElementById('asset-full').textContent = `Øvelseskonto · ${fmtMoney0(10000, R.currency)} · nulstilles hver session`;
     setStatus(`Genspiller ${esc(R.dayLabel)} · ${replayCandles.length} minutstænger`);
     renderReplayUI();
     drawChart();
@@ -364,7 +392,7 @@ function openTrade(direction) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol, direction, amount, leverage }),
     }).then((order) => {
-      notif(`${direction === 'long' ? '▲ LONG' : '▼ SHORT'} åbnet · ${order.qty} stk. @ ${fmtUSD(order.entry_price)} · stop @ ${fmtUSD(order.stop_price)}`, direction === 'long' ? 'win' : 'loss');
+      notif(`${direction === 'long' ? '▲ LONG' : '▼ SHORT'} åbnet · ${order.qty} stk. @ ${fmtMoney(order.entry_price, 'USD')} · stop @ ${fmtMoney(order.stop_price, 'USD')}`, direction === 'long' ? 'win' : 'loss');
       setTimeout(refreshLiveAccountAndPositions, 1500);
     }).catch(e => notif(e.message, 'loss'));
     return;
@@ -376,7 +404,7 @@ function openTrade(direction) {
   const price = curPrice();
   g.positions.push({ id: ++g.pid, dir: direction, amount, leverage, entryPrice: price, openIdx: g.idx, exposure: amount * leverage });
   g.balance -= amount;
-  notif(`${direction === 'long' ? '▲ LONG' : '▼ SHORT'} åbnet @ ${fmtUSD(price)}`, direction === 'long' ? 'win' : 'loss');
+  notif(`${direction === 'long' ? '▲ LONG' : '▼ SHORT'} åbnet @ ${fmtMoney(price, R.currency)}`, direction === 'long' ? 'win' : 'loss');
   renderReplayUI();
   drawChart();
 }
@@ -397,14 +425,14 @@ function closePosReplay(id) {
   pnl >= 0 ? g.wins++ : g.losses++;
   g.history.unshift({ dir: p.dir, entry: p.entryPrice, exit: curPrice(), pnl });
   g.positions.splice(idx, 1);
-  notif(`Lukket: ${pnl >= 0 ? '+' : ''}${fmtUSD0(pnl)}`, pnl >= 0 ? 'win' : 'loss');
+  notif(`Lukket: ${pnl >= 0 ? '+' : ''}${fmtMoney0(pnl, R.currency)}`, pnl >= 0 ? 'win' : 'loss');
   renderReplayUI();
 }
 
 function checkStopLossReplay() {
   [...g.positions].forEach(p => {
     if (calcPnLReplay(p) / p.exposure <= -STOP_LOSS_FRACTION) {
-      notif(`Stop-loss ramt! ${fmtUSD0(calcPnLReplay(p))}`, 'loss');
+      notif(`Stop-loss ramt! ${fmtMoney0(calcPnLReplay(p), R.currency)}`, 'loss');
       closePosReplay(p.id);
     }
   });
@@ -418,30 +446,30 @@ function renderReplayUI() {
   const chg = price - prev, pct = chg / prev * 100;
   const dayChg = price - R.open, dayPct = dayChg / R.open * 100;
 
-  document.getElementById('price-now').textContent = fmtUSD(price);
+  document.getElementById('price-now').textContent = fmtMoney(price, R.currency);
   document.getElementById('price-now').className = `price-now ${dayChg >= 0 ? 'up' : 'dn'}`;
-  document.getElementById('price-meta').textContent = `${dayChg >= 0 ? '+' : ''}${fmtUSD(dayChg)} (${fmtPct(dayPct)}) siden åbning`;
+  document.getElementById('price-meta').textContent = `${dayChg >= 0 ? '+' : ''}${fmtMoney(dayChg, R.currency)} (${fmtPct(dayPct)}) siden åbning`;
   document.getElementById('price-meta').className = `price-meta ${dayChg >= 0 ? 'up' : 'dn'}`;
 
   const seen = replayCandles.slice(0, g.idx + 1);
-  document.getElementById('ks-open').textContent = fmtUSD(R.open);
-  document.getElementById('ks-prev').textContent = fmtUSD(R.prev);
-  document.getElementById('ks-high').textContent = fmtUSD(Math.max(...seen.map(b => b.h)));
-  document.getElementById('ks-low').textContent = fmtUSD(Math.min(...seen.map(b => b.l)));
+  document.getElementById('ks-open').textContent = fmtMoney(R.open, R.currency);
+  document.getElementById('ks-prev').textContent = fmtMoney(R.prev, R.currency);
+  document.getElementById('ks-high').textContent = fmtMoney(Math.max(...seen.map(b => b.h)), R.currency);
+  document.getElementById('ks-low').textContent = fmtMoney(Math.min(...seen.map(b => b.l)), R.currency);
   document.getElementById('ks-close-label').textContent = 'AKTUEL';
-  document.getElementById('ks-close').textContent = fmtUSD(price);
+  document.getElementById('ks-close').textContent = fmtMoney(price, R.currency);
   document.getElementById('ks-chg').textContent = fmtPct(dayPct);
 
-  document.getElementById('clock').textContent = fmtClock(new Date(replayCandles[g.idx].t).getTime());
+  document.getElementById('clock').textContent = fmtClock(new Date(replayCandles[g.idx].t).getTime(), exchangeTZ(symbol));
   document.getElementById('prog-fill').style.width = `${(g.idx / (replayCandles.length - 1)) * 100}%`;
   document.getElementById('candle-info').textContent = `${g.idx + 1} / ${replayCandles.length}`;
   const statusEl = document.getElementById('mkt-status');
   if (g.idx >= replayCandles.length - 1) { statusEl.textContent = 'LUKKET'; statusEl.className = 'market-status closed'; }
   else { statusEl.textContent = 'ÅBENT'; statusEl.className = 'market-status open'; }
 
-  document.getElementById('hbal').textContent = fmtUSD0(g.balance);
+  document.getElementById('hbal').textContent = fmtMoney0(g.balance, R.currency);
   const pnlEl = document.getElementById('hpnl');
-  pnlEl.textContent = `${g.pnl >= 0 ? '+' : ''}${fmtUSD0(g.pnl)}`;
+  pnlEl.textContent = `${g.pnl >= 0 ? '+' : ''}${fmtMoney0(g.pnl, R.currency)}`;
   pnlEl.className = `hstat-value ${g.pnl >= 0 ? 'up' : 'dn'}`;
   const tot = g.wins + g.losses;
   document.getElementById('hwr').textContent = tot > 0 ? Math.round(g.wins / tot * 100) + '%' : '–';
@@ -452,8 +480,8 @@ function renderReplayUI() {
     const col = pnl >= 0 ? 'var(--green)' : 'var(--red)';
     return `<div class="pos-card">
       <div class="pos-dir ${p.dir}">${p.dir.toUpperCase()}</div>
-      <div class="pos-detail"><div class="sym">${esc(symbol)}</div><div class="meta">@ ${fmtUSD(p.entryPrice)} · ${p.leverage}x · ${fmtUSD0(p.amount)}</div></div>
-      <div class="pos-pnl" style="color:${col}">${pnl >= 0 ? '+' : ''}${fmtUSD0(pnl)}<br><span style="font-size:9px">${fmtPct(pnl / p.exposure * 100)}</span></div>
+      <div class="pos-detail"><div class="sym">${esc(symbol)}</div><div class="meta">@ ${fmtMoney(p.entryPrice, R.currency)} · ${p.leverage}x · ${fmtMoney0(p.amount, R.currency)}</div></div>
+      <div class="pos-pnl" style="color:${col}">${pnl >= 0 ? '+' : ''}${fmtMoney0(pnl, R.currency)}<br><span style="font-size:9px">${fmtPct(pnl / p.exposure * 100)}</span></div>
       <button class="btn-x" onclick="closePosReplay(${p.id})">LUK</button>
     </div>`;
   }).join('');
@@ -461,8 +489,8 @@ function renderReplayUI() {
   const histEl = document.getElementById('hist-list');
   histEl.innerHTML = !g.history.length ? '<div class="empty-msg">Ingen handler endnu</div>' : g.history.slice(0, 20).map(h => `
     <div class="hist-row">
-      <span>${h.dir.toUpperCase()} ${fmtUSD(h.entry)} → ${fmtUSD(h.exit)}</span>
-      <span class="${h.pnl >= 0 ? 'win' : 'loss'}">${h.pnl >= 0 ? '+' : ''}${fmtUSD0(h.pnl)}</span>
+      <span>${h.dir.toUpperCase()} ${fmtMoney(h.entry, R.currency)} → ${fmtMoney(h.exit, R.currency)}</span>
+      <span class="${h.pnl >= 0 ? 'win' : 'loss'}">${h.pnl >= 0 ? '+' : ''}${fmtMoney0(h.pnl, R.currency)}</span>
     </div>
   `).join('');
 
@@ -482,7 +510,7 @@ function showEnd() {
   overlay.innerHTML = `
     <h1 style="color:${isWin ? 'var(--green)' : 'var(--red)'}">${isWin ? 'PROFITABLE' : 'TABT'}</h1>
     <div class="sub">${esc(symbol)} · ${esc(R.dayLabel.toUpperCase())} · SESSION SLUT</div>
-    <div class="final">${fmtUSD0(final)}</div>
+    <div class="final">${fmtMoney0(final, R.currency)}</div>
     <table>
       <tr><td>Afkast</td><td class="val" style="color:${isWin ? 'var(--green)' : 'var(--red)'}">${fmtPct(ret)}</td></tr>
       <tr><td>Wins</td><td class="val">${g.wins}</td></tr>
@@ -491,7 +519,7 @@ function showEnd() {
       <tr><td>Handler i alt</td><td class="val">${total}</td></tr>
     </table>
     <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-top:8px;">
-      Faktisk udfald: ${esc(symbol)} åbnede ${fmtUSD(R.open)} · lukkede ${fmtUSD(R.close)} · ${fmtPct(dayRet)}
+      Faktisk udfald: ${esc(symbol)} åbnede ${fmtMoney(R.open, R.currency)} · lukkede ${fmtMoney(R.close, R.currency)} · ${fmtPct(dayRet)}
     </div>
     <button class="btn-again" onclick="loadReplay()">SPIL IGEN</button>
   `;
@@ -555,8 +583,9 @@ function updLev() {
 function updateTradeInfo() {
   const amt = parseFloat(amountInput.value) || 0;
   const lev = parseInt(leverageInput.value) || 1;
-  document.getElementById('ti-margin').textContent = fmtUSD0(amt);
-  document.getElementById('ti-exp').textContent = fmtUSD0(amt * lev);
+  const cur = mode === 'live' ? live.currency : R.currency;
+  document.getElementById('ti-margin').textContent = fmtMoney0(amt, cur);
+  document.getElementById('ti-exp').textContent = fmtMoney0(amt * lev, cur);
 }
 
 function setStatus(html) {

@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import alpaca_client as alpaca
+import yahoo_client as yahoo
 
 app = FastAPI(title="Stocktrack")
 
@@ -28,6 +29,12 @@ def account():
 @app.get("/api/quote/{symbol}")
 def quote(symbol: str):
     symbol = symbol.upper()
+    if yahoo.is_yahoo_symbol(symbol):
+        try:
+            return yahoo.get_quote(symbol)
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"Kunne ikke hente kurs for {symbol}: {e}")
+
     try:
         price = alpaca.get_latest_price(symbol)
     except Exception as e:
@@ -39,13 +46,15 @@ def quote(symbol: str):
         prev_close = price
     change = price - prev_close
     change_pct = (change / prev_close * 100) if prev_close else 0.0
-    return {"symbol": symbol, "price": price, "prev_close": prev_close, "change": change, "change_pct": change_pct}
+    return {"symbol": symbol, "price": price, "prev_close": prev_close, "change": change, "change_pct": change_pct, "currency": "USD", "name": symbol}
 
 
 @app.get("/api/replay/{symbol}")
 def replay(symbol: str, day: str | None = None):
+    symbol = symbol.upper()
+    source = yahoo if yahoo.is_yahoo_symbol(symbol) else alpaca
     try:
-        bars = alpaca.get_minute_bars_for_day(symbol.upper(), day)
+        bars = source.get_minute_bars_for_day(symbol, day)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Kunne ikke hente historik for {symbol}: {e}")
     if not bars:
@@ -60,6 +69,12 @@ def positions():
 
 @app.post("/api/trade")
 def trade(req: TradeRequest):
+    symbol = req.symbol.upper()
+    if yahoo.is_yahoo_symbol(symbol):
+        raise HTTPException(
+            status_code=400,
+            detail="Live-handel understøtter kun amerikanske aktier (ægte Alpaca-ordrer) — brug Replay-træning for at øve dig i danske aktier",
+        )
     if req.direction not in ("long", "short"):
         raise HTTPException(status_code=400, detail="direction skal være 'long' eller 'short'")
     if req.amount <= 0:
