@@ -86,3 +86,26 @@ def get_minute_bars_for_day(symbol: str, day: str | None = None):
     today = datetime.now(timezone.utc).date().isoformat()
     keys = sorted(k for k in days if k != today)
     return days[keys[-1]] if keys else []
+
+
+def search(query: str):
+    """Ticker/company search — covers every exchange Yahoo knows, so this is
+    also how a plain US symbol (no suffix) turns up alongside the Danish
+    .CO-suffixed ones: no need to know the right suffix ahead of time."""
+    r = requests.get(
+        "https://query1.finance.yahoo.com/v1/finance/search",
+        params={"q": query, "quotesCount": 8, "newsCount": 0},
+        headers=HEADERS,
+        timeout=10,
+    )
+    r.raise_for_status()
+    quotes = (r.json() or {}).get("quotes") or []
+    return [
+        {
+            "symbol": q.get("symbol"),
+            "name": q.get("shortname") or q.get("longname") or q.get("symbol"),
+            "exchange": q.get("exchange"),
+        }
+        for q in quotes
+        if q.get("quoteType") == "EQUITY" and q.get("symbol")
+    ]

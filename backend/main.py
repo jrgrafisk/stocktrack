@@ -49,6 +49,17 @@ def quote(symbol: str):
     return {"symbol": symbol, "price": price, "prev_close": prev_close, "change": change, "change_pct": change_pct, "currency": "USD", "name": symbol}
 
 
+@app.get("/api/search")
+def search(q: str):
+    q = q.strip()
+    if len(q) < 1:
+        return []
+    try:
+        return yahoo.search(q)
+    except Exception:
+        return []
+
+
 @app.get("/api/replay/{symbol}")
 def replay(symbol: str, day: str | None = None):
     symbol = symbol.upper()

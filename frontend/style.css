@@ -96,6 +96,7 @@ header {
 #ticker-select option, #ticker-select optgroup { background: var(--panel); color: var(--text); }
 
 #symbol-form { display: flex; gap: 6px; align-items: center; }
+#search-wrap { position: relative; }
 #symbol-input {
   background: rgba(21,30,53,0.8);
   border: 1px solid var(--border);
@@ -105,8 +106,37 @@ header {
   padding: 4px 8px;
   border-radius: 2px;
   text-transform: uppercase;
-  width: 110px;
+  width: 190px;
 }
+
+#search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 260px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+#search-results li {
+  padding: 6px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+}
+#search-results li:hover, #search-results li.active { background: rgba(74,144,226,0.12); }
+#search-results .sr-sym { color: var(--gold); font-weight: 600; }
+#search-results .sr-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 
 .src-status {
   margin-left: auto;

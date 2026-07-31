@@ -196,6 +196,7 @@ symbolForm.addEventListener('submit', (e) => {
   if (!s) return;
   symbol = s;
   document.getElementById('asset-ticker').textContent = symbol;
+  hideSearchResults();
   if (mode === 'live') loadLive(); else loadReplay();
 });
 
@@ -205,6 +206,58 @@ tickerSelect.addEventListener('change', () => {
   symbolInput.value = tickerSelect.value;
   symbolForm.requestSubmit();
   tickerSelect.value = '';
+});
+
+// ======================================================
+// TICKER SEARCH (Yahoo Finance search — covers every exchange, so this
+// also solves "what suffix does this Danish stock use" for the user)
+// ======================================================
+const searchResultsEl = document.getElementById('search-results');
+let searchDebounce = null;
+
+function hideSearchResults() {
+  searchResultsEl.classList.add('hidden');
+  searchResultsEl.innerHTML = '';
+}
+
+function renderSearchResults(results) {
+  if (!results.length) { hideSearchResults(); return; }
+  searchResultsEl.innerHTML = results.map(r => `
+    <li data-symbol="${esc(r.symbol)}">
+      <span class="sr-sym">${esc(r.symbol)}</span>
+      <span class="sr-name">${esc(r.name)}${r.exchange ? ' · ' + esc(r.exchange) : ''}</span>
+    </li>
+  `).join('');
+  searchResultsEl.classList.remove('hidden');
+  searchResultsEl.querySelectorAll('li').forEach(li => {
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      symbolInput.value = li.dataset.symbol;
+      symbolForm.requestSubmit();
+    });
+  });
+}
+
+async function runTickerSearch(q) {
+  if (!q || q.length < 1) { hideSearchResults(); return; }
+  try {
+    const results = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}`);
+    renderSearchResults(results);
+  } catch (e) { hideSearchResults(); }
+}
+
+symbolInput.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  const q = symbolInput.value.trim();
+  searchDebounce = setTimeout(() => runTickerSearch(q), 300);
+});
+
+symbolInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideSearchResults();
+});
+
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('search-wrap').contains(e.target)) hideSearchResults();
 });
 
 // ======================================================

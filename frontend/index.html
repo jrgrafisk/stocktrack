@@ -46,7 +46,10 @@
     </optgroup>
   </select>
   <form id="symbol-form">
-    <input type="text" id="symbol-input" placeholder="… eller skriv selv en ticker" autocomplete="off" value="AAPL">
+    <div id="search-wrap">
+      <input type="text" id="symbol-input" placeholder="… eller søg fx Vestas, VWS, Novo" autocomplete="off" value="AAPL">
+      <ul id="search-results" class="hidden"></ul>
+    </div>
     <button type="submit" class="src-btn">Skift aktie</button>
   </form>
   <div class="src-status" id="src-status">Indlæser…</div>
@@ -164,7 +167,7 @@
         <b>Replay-træning</b> spiller en tidligere handelsdag af i dit eget tempo, med en lokal øvelseskonto der nulstilles hver gang — perfekt til at øve sig uden at røre den rigtige konto.
       </div>
       <div class="news-item neutral">
-        <b>Danske aktier</b> (fx DANSKE.CO, NOVO-B.CO, MAERSK-B.CO) kan kun genspilles, ikke handles live — der er ingen rigtig mægler bag dem.
+        <b>Danske aktier</b> (fx DANSKE.CO, NOVO-B.CO, MAERSK-B.CO) handles kun via Replay-træning (evt. "Live i dag") — ikke Live-handel, da der ingen rigtig mægler er bag dem.
       </div>
     </div>
 
