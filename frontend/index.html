@@ -28,8 +28,25 @@
   <button class="src-btn replay-only hidden active" id="replay-src-historic" onclick="setReplaySource('historic')">Historisk dag</button>
   <button class="src-btn replay-only hidden" id="replay-src-live" onclick="setReplaySource('live')">Live i dag</button>
   <span class="sep"></span>
+  <select id="ticker-select" title="Vælg blandt de mest kendte aktier">
+    <option value="">Top 10 aktier…</option>
+    <optgroup label="Amerikanske (live-handel)">
+      <option value="AAPL">Apple (AAPL)</option>
+      <option value="MSFT">Microsoft (MSFT)</option>
+      <option value="GOOGL">Alphabet (GOOGL)</option>
+      <option value="AMZN">Amazon (AMZN)</option>
+      <option value="NVDA">Nvidia (NVDA)</option>
+      <option value="TSLA">Tesla (TSLA)</option>
+      <option value="META">Meta (META)</option>
+    </optgroup>
+    <optgroup label="Danske (kun replay)">
+      <option value="NOVO-B.CO">Novo Nordisk (NOVO-B.CO)</option>
+      <option value="MAERSK-B.CO">Mærsk (MAERSK-B.CO)</option>
+      <option value="DANSKE.CO">Danske Bank (DANSKE.CO)</option>
+    </optgroup>
+  </select>
   <form id="symbol-form">
-    <input type="text" id="symbol-input" placeholder="Ticker, fx AAPL eller DANSKE.CO" autocomplete="off" value="AAPL">
+    <input type="text" id="symbol-input" placeholder="… eller skriv selv en ticker" autocomplete="off" value="AAPL">
     <button type="submit" class="src-btn">Skift aktie</button>
   </form>
   <div class="src-status" id="src-status">Indlæser…</div>

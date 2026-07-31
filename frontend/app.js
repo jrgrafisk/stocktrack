@@ -199,6 +199,14 @@ symbolForm.addEventListener('submit', (e) => {
   if (mode === 'live') loadLive(); else loadReplay();
 });
 
+const tickerSelect = document.getElementById('ticker-select');
+tickerSelect.addEventListener('change', () => {
+  if (!tickerSelect.value) return;
+  symbolInput.value = tickerSelect.value;
+  symbolForm.requestSubmit();
+  tickerSelect.value = '';
+});
+
 // ======================================================
 // LIVE MODE
 // ======================================================
