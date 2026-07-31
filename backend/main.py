@@ -13,10 +13,11 @@ import alpaca_client as alpaca
 app = FastAPI(title="Stocktrack")
 
 
-class OrderRequest(BaseModel):
+class TradeRequest(BaseModel):
     symbol: str
-    side: str  # "buy" or "sell"
-    qty: float
+    direction: str  # "long" or "short"
+    amount: float
+    leverage: int = 1
 
 
 @app.get("/api/account")
@@ -26,27 +27,30 @@ def account():
 
 @app.get("/api/quote/{symbol}")
 def quote(symbol: str):
+    symbol = symbol.upper()
     try:
-        price = alpaca.get_latest_price(symbol.upper())
+        price = alpaca.get_latest_price(symbol)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Kunne ikke hente kurs for {symbol}: {e}")
-    return {"symbol": symbol.upper(), "price": price}
-
-
-@app.get("/api/quotes")
-def quotes(symbols: str):
-    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    if not symbol_list:
-        raise HTTPException(status_code=400, detail="symbols mangler")
-    return alpaca.get_quotes_with_change(symbol_list)
-
-
-@app.get("/api/bars/{symbol}")
-def bars(symbol: str, days: int = 30):
     try:
-        return alpaca.get_daily_bars(symbol.upper(), days=days)
+        daily = alpaca.get_daily_bars(symbol, days=2)
+        prev_close = daily[-2]["close"] if len(daily) >= 2 else price
+    except Exception:
+        prev_close = price
+    change = price - prev_close
+    change_pct = (change / prev_close * 100) if prev_close else 0.0
+    return {"symbol": symbol, "price": price, "prev_close": prev_close, "change": change, "change_pct": change_pct}
+
+
+@app.get("/api/replay/{symbol}")
+def replay(symbol: str, day: str | None = None):
+    try:
+        bars = alpaca.get_minute_bars_for_day(symbol.upper(), day)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Kunne ikke hente historik for {symbol}: {e}")
+    if not bars:
+        raise HTTPException(status_code=404, detail=f"Ingen data for {symbol} den valgte dag")
+    return bars
 
 
 @app.get("/api/positions")
@@ -54,14 +58,24 @@ def positions():
     return alpaca.get_positions()
 
 
-@app.post("/api/orders")
-def create_order(order: OrderRequest):
-    if order.side not in ("buy", "sell"):
-        raise HTTPException(status_code=400, detail="side skal være 'buy' eller 'sell'")
-    if order.qty <= 0:
-        raise HTTPException(status_code=400, detail="qty skal være positiv")
+@app.post("/api/trade")
+def trade(req: TradeRequest):
+    if req.direction not in ("long", "short"):
+        raise HTTPException(status_code=400, detail="direction skal være 'long' eller 'short'")
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount skal være positiv")
     try:
-        return alpaca.place_market_order(order.symbol.upper(), order.side, order.qty)
+        return alpaca.place_leveraged_order(req.symbol.upper(), req.direction, req.amount, req.leverage)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/positions/{symbol}/close")
+def close(symbol: str):
+    try:
+        return alpaca.close_position(symbol.upper())
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

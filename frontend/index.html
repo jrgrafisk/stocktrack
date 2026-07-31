@@ -3,78 +3,149 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stocktrack – øv dig i at handle aktier</title>
+<title>Stocktrack — undervisning i aktiehandel</title>
 <link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
+
 <header>
-  <h1>📈 Stocktrack</h1>
-  <p class="subtitle">Øv dig i at handle aktier med legetøjspenge – rigtige kurser, ingen risiko</p>
+  <div class="brand">
+    <div class="brand-name">STOCK<span>TRACK</span></div>
+    <div class="brand-sub" id="brand-sub">LIVE · INDLÆSER…</div>
+  </div>
+  <div class="header-stats">
+    <div class="hstat"><div class="hstat-label">Kapital</div><div class="hstat-value neutral" id="hbal">–</div></div>
+    <div class="hstat"><div class="hstat-label">P&amp;L</div><div class="hstat-value neutral" id="hpnl">–</div></div>
+    <div class="hstat"><div class="hstat-label">Win Rate</div><div class="hstat-value neutral" id="hwr">–</div></div>
+  </div>
 </header>
 
-<main>
-  <section id="account-card" class="card">
-    <h2>Din konto</h2>
-    <div class="stats">
-      <div><span class="label">Kontant</span><span id="stat-cash" class="value">–</span></div>
-      <div><span class="label">Porteføljeværdi</span><span id="stat-equity" class="value">–</span></div>
-      <div><span class="label">Købekraft</span><span id="stat-buying-power" class="value">–</span></div>
-    </div>
-  </section>
+<div class="source-bar">
+  <span class="ctrl-label">TILSTAND:</span>
+  <button class="src-btn active" id="mode-live" onclick="setMode('live')">Live-handel</button>
+  <button class="src-btn" id="mode-replay" onclick="setMode('replay')">Replay-træning</button>
+  <span class="sep"></span>
+  <form id="symbol-form">
+    <input type="text" id="symbol-input" placeholder="Ticker, fx AAPL" autocomplete="off" value="AAPL">
+    <button type="submit" class="src-btn">Skift aktie</button>
+  </form>
+  <div class="src-status" id="src-status">Indlæser…</div>
+</div>
 
-  <section id="tracker-card" class="card">
-    <h2>Tracker</h2>
-    <form id="watchlist-form">
-      <input type="text" id="watchlist-input" placeholder="Tilføj ticker, fx NVDA" autocomplete="off">
-      <button type="submit">Tilføj</button>
-    </form>
-    <table id="watchlist-table">
-      <thead>
-        <tr><th>Ticker</th><th>Kurs</th><th>Ændring</th><th>%</th><th></th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <div class="chart-wrap">
-      <p id="chart-title" class="chart-title">Klik på en aktie for at se prisudvikling</p>
-      <canvas id="price-chart" height="220"></canvas>
-    </div>
-  </section>
+<div class="layout">
+  <div class="center">
 
-  <section id="trade-card" class="card">
-    <h2>Handl</h2>
-    <form id="trade-form">
-      <input type="text" id="symbol-input" placeholder="Ticker, fx AAPL" autocomplete="off" required>
-      <span id="quote-display" class="quote">–</span>
-      <input type="number" id="qty-input" placeholder="Antal aktier" min="1" step="1" required>
-      <div class="trade-buttons">
-        <button type="submit" data-side="buy" class="btn-buy">Køb</button>
-        <button type="submit" data-side="sell" class="btn-sell">Sælg</button>
+    <div class="chart-area">
+      <div class="chart-header">
+        <div class="asset-info">
+          <div class="asset-ticker" id="asset-ticker">–</div>
+          <div class="asset-full" id="asset-full">US-aktie · USD</div>
+        </div>
+        <div class="price-block">
+          <div class="price-now" id="price-now">–</div>
+          <div class="price-meta" id="price-meta">–</div>
+        </div>
       </div>
-    </form>
-    <p id="trade-message" class="message"></p>
-  </section>
+      <div id="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
 
-  <section id="positions-card" class="card">
-    <h2>Beholdning</h2>
-    <table id="positions-table">
-      <thead>
-        <tr><th>Ticker</th><th>Antal</th><th>Snitkøb</th><th>Kurs nu</th><th>Værdi</th><th>Gevinst/tab</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <div class="timeline" id="timeline">
+      <div class="clock" id="clock">–</div>
+      <div class="progress-wrap" id="prog-wrap" onclick="seekTo(event)">
+        <div class="progress-fill" id="prog-fill" style="width:0%"></div>
+      </div>
+      <div class="market-status open" id="mkt-status">–</div>
+      <div style="font-size:10px;color:var(--muted);" id="candle-info">–</div>
+    </div>
 
-  <section id="orders-card" class="card">
-    <h2>Handelshistorik</h2>
-    <table id="orders-table">
-      <thead>
-        <tr><th>Tidspunkt</th><th>Ticker</th><th>Side</th><th>Antal</th><th>Kurs</th><th>Status</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
-</main>
+    <div class="controls" id="controls">
+      <span class="ctrl-label">TEMPO:</span>
+      <button class="ctrl-btn" onclick="setSpeed(4000)">0.25x</button>
+      <button class="ctrl-btn" onclick="setSpeed(2000)">0.5x</button>
+      <button class="ctrl-btn active" id="spd-1x" onclick="setSpeed(1000)">1x</button>
+      <button class="ctrl-btn" onclick="setSpeed(500)">2x</button>
+      <button class="ctrl-btn" onclick="setSpeed(200)">5x</button>
+      <button class="ctrl-btn" onclick="setSpeed(60)">15x</button>
+      <div class="sep"></div>
+      <button class="ctrl-btn" id="pause-btn" onclick="togglePause()">⏸ Pause</button>
+      <div style="margin-left:auto;font-size:9px;color:var(--muted);">1 sekund = <span id="tempo-label">1 minut</span></div>
+    </div>
+
+    <div class="positions-area">
+      <div class="section-title">Åbne positioner</div>
+      <div id="pos-list"><div class="empty-msg">Ingen åbne positioner</div></div>
+    </div>
+
+    <div class="history-area">
+      <div class="section-title">Handelshistorik</div>
+      <div id="hist-list"><div class="empty-msg">Ingen handler endnu</div></div>
+    </div>
+
+  </div>
+
+  <div class="sidebar">
+
+    <div class="sidebar-section">
+      <div class="section-title" id="ks-title">Nøgletal</div>
+      <div class="keystats">
+        <div class="ks"><div class="ks-label">ÅBNINGSKURS</div><div class="ks-val" id="ks-open">–</div></div>
+        <div class="ks"><div class="ks-label">FORRIGE LUK</div><div class="ks-val" id="ks-prev">–</div></div>
+        <div class="ks"><div class="ks-label">DAGENS HØJ</div><div class="ks-val" id="ks-high" style="color:var(--green)">–</div></div>
+        <div class="ks"><div class="ks-label">DAGENS LAV</div><div class="ks-val" id="ks-low" style="color:var(--red)">–</div></div>
+        <div class="ks"><div class="ks-label" id="ks-close-label">SENESTE</div><div class="ks-val" id="ks-close" style="color:var(--gold)">–</div></div>
+        <div class="ks"><div class="ks-label">DAGSUDSVING</div><div class="ks-val" id="ks-chg">–</div></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-title">Åben position</div>
+
+      <div class="amount-row">
+        <span class="field-label">BELØB</span>
+        <input class="field-input" type="number" id="amount" value="500" min="1">
+        <span style="font-size:11px;color:var(--muted)">$</span>
+      </div>
+
+      <div class="quick-row">
+        <button class="qb" onclick="setAmt(250)">250</button>
+        <button class="qb" onclick="setAmt(500)">500</button>
+        <button class="qb" onclick="setAmt(1000)">1000</button>
+        <button class="qb" onclick="setAmt(pct(25))">25%</button>
+        <button class="qb" onclick="setAmt(pct(100))">ALT</button>
+      </div>
+
+      <div class="lev-row">
+        <span class="field-label">GEARING</span>
+        <input type="range" class="lev-slider" id="leverage" min="1" max="4" value="1" oninput="updLev()">
+        <span class="lev-val" id="lev-val">1x</span>
+      </div>
+
+      <div class="trade-btns">
+        <button class="btn-long" onclick="openTrade('long')">LONG<br><span style="font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:0">▲ Stigning</span></button>
+        <button class="btn-short" onclick="openTrade('short')">SHORT<br><span style="font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:0">▼ Fald</span></button>
+      </div>
+
+      <div class="trade-info">
+        Margin: <span id="ti-margin">$0</span><br>
+        Eksponering: <span id="ti-exp">$0</span><br>
+        Stop-loss: <span id="ti-sl">−80% af margin</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-title">Om tilstandene</div>
+      <div class="news-item neutral">
+        <b>Live-handel</b> bruger din rigtige Alpaca paper-konto — ægte (ca. 15 min. forsinkede) kurser, rigtige ordrer med gearing op til 4x og indbygget stop-loss.
+      </div>
+      <div class="news-item neutral">
+        <b>Replay-træning</b> spiller en tidligere handelsdag af i dit eget tempo, med en lokal øvelseskonto ($10.000) der nulstilles hver gang — perfekt til at øve sig uden at røre den rigtige konto.
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

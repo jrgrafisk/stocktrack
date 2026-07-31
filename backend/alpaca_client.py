@@ -2,11 +2,19 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
+from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest, StopLossRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus, OrderClass
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestTradeRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
+from alpaca.data.enums import DataFeed
+
+# Free/paper accounts don't have a SIP subscription, which blocks querying
+# recent data on the default feed — IEX is the always-available free feed.
+FEED = DataFeed.IEX
+
+MAX_LEVERAGE = 4  # matches Alpaca's paper account Reg-T margin multiplier
+STOP_LOSS_FRACTION = 0.8  # auto-close once a position has lost 80% of its margin
 
 API_KEY = os.environ["ALPACA_API_KEY"]
 SECRET_KEY = os.environ["ALPACA_SECRET_KEY"]
@@ -26,43 +34,52 @@ def get_account():
 
 
 def get_latest_price(symbol: str) -> float:
-    req = StockLatestTradeRequest(symbol_or_symbols=symbol)
+    req = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=FEED)
     trade = data_client.get_stock_latest_trade(req)[symbol]
     return float(trade.price)
 
 
-def get_daily_bars(symbol: str, days: int = 30):
+def get_daily_bars(symbol: str, days: int = 2):
+    """Used to find the previous close for the header's day-change figure."""
     start = datetime.now(timezone.utc) - timedelta(days=days * 2 + 10)
-    req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start)
+    req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Day, start=start, feed=FEED)
     bars = data_client.get_stock_bars(req)[symbol][-days:]
     return [{"t": b.timestamp.isoformat(), "close": float(b.close)} for b in bars]
 
 
-def get_quotes_with_change(symbols: list[str]):
-    trades_req = StockLatestTradeRequest(symbol_or_symbols=symbols)
-    trades = data_client.get_stock_latest_trade(trades_req)
+def get_minute_bars_for_day(symbol: str, day: str | None = None):
+    """1-minute bars for a single trading day (YYYY-MM-DD). Defaults to the
+    most recent day that has data (skips weekends/holidays automatically
+    since Alpaca simply returns no bars for those days)."""
+    if day:
+        start = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        # Free-tier data has a mandatory ~15 min delay: querying inside that
+        # window is rejected outright rather than just delayed, so cap "today"
+        # requests short of it. Past days are unaffected (already delayed).
+        end = min(start + timedelta(days=1), now - timedelta(minutes=16))
+        req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, start=start, end=end, feed=FEED)
+        bars = data_client.get_stock_bars(req).data.get(symbol, [])
+    else:
+        # No explicit day: used by replay mode, which wants a *complete* past
+        # session, so start from yesterday (today's day is still in progress
+        # and belongs to live mode instead). Walk back day by day until a day
+        # with bars turns up (handles weekends/holidays).
+        cursor = datetime.now(timezone.utc) - timedelta(days=1)
+        bars = []
+        for _ in range(10):
+            start = cursor.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=1)
+            req = StockBarsRequest(symbol_or_symbols=symbol, timeframe=TimeFrame.Minute, start=start, end=end, feed=FEED)
+            bars = data_client.get_stock_bars(req).data.get(symbol, [])
+            if bars:
+                break
+            cursor -= timedelta(days=1)
 
-    start = datetime.now(timezone.utc) - timedelta(days=14)
-    bars_req = StockBarsRequest(symbol_or_symbols=symbols, timeframe=TimeFrame.Day, start=start)
-    bars_map = data_client.get_stock_bars(bars_req)
-
-    result = []
-    for symbol in symbols:
-        try:
-            price = float(trades[symbol].price)
-            bars = bars_map[symbol]
-            prev_close = float(bars[-2].close) if len(bars) >= 2 else price
-            change = price - prev_close
-            change_pct = (change / prev_close * 100) if prev_close else 0.0
-            result.append({
-                "symbol": symbol,
-                "price": price,
-                "change": change,
-                "change_pct": change_pct,
-            })
-        except Exception as e:
-            result.append({"symbol": symbol, "error": str(e)})
-    return result
+    return [
+        {"t": b.timestamp.isoformat(), "o": float(b.open), "h": float(b.high), "l": float(b.low), "c": float(b.close)}
+        for b in bars
+    ]
 
 
 def get_positions():
@@ -81,22 +98,57 @@ def get_positions():
     ]
 
 
-def place_market_order(symbol: str, side: str, qty: float):
-    order_side = OrderSide.BUY if side == "buy" else OrderSide.SELL
+def place_leveraged_order(symbol: str, direction: str, amount: float, leverage: int):
+    """Opens a long or short position sized by `amount` (margin) x `leverage`
+    (capped at Alpaca's own 4x Reg-T multiplier), with a native stop-loss
+    order attached that closes the position once it has lost 80% of the
+    margin put up — mirrors a leveraged CFD-style bet, but the entry, fill,
+    and stop are all real Alpaca paper orders."""
+    leverage = max(1, min(MAX_LEVERAGE, leverage))
+    price = get_latest_price(symbol)
+    qty = int((amount * leverage) / price)
+    if qty < 1:
+        raise ValueError("Beløbet er for lille til at købe/sælge en hel aktie ved denne kurs og gearing")
+
+    is_long = direction == "long"
+    order_side = OrderSide.BUY if is_long else OrderSide.SELL
+    stop_fraction = STOP_LOSS_FRACTION / leverage
+    stop_price = price * (1 - stop_fraction) if is_long else price * (1 + stop_fraction)
+
     order_data = MarketOrderRequest(
         symbol=symbol,
         qty=qty,
         side=order_side,
         time_in_force=TimeInForce.DAY,
+        order_class=OrderClass.OTO,
+        stop_loss=StopLossRequest(stop_price=round(stop_price, 2)),
     )
     order = trading_client.submit_order(order_data)
     return {
         "id": str(order.id),
         "symbol": order.symbol,
-        "side": order.side.value,
-        "qty": float(order.qty) if order.qty else None,
+        "direction": direction,
+        "qty": qty,
+        "leverage": leverage,
+        "entry_price": price,
+        "stop_price": round(stop_price, 2),
         "status": order.status.value,
         "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+    }
+
+
+def close_position(symbol: str):
+    # A leveraged position always has its stop-loss leg (OTO) still open,
+    # which holds the shares and blocks a manual close — cancel it first.
+    open_orders = trading_client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol]))
+    for o in open_orders:
+        trading_client.cancel_order_by_id(o.id)
+
+    order = trading_client.close_position(symbol)
+    return {
+        "id": str(order.id),
+        "symbol": order.symbol,
+        "status": order.status.value,
     }
 
 
