@@ -138,6 +138,7 @@ canvas#chart { position: absolute; inset: 0; width: 100% !important; height: 100
   flex-shrink: 0;
 }
 .timeline.hidden { display: none; }
+.hidden { display: none !important; }
 
 .clock { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 2px; color: var(--gold); min-width: 60px; }
 

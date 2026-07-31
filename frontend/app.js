@@ -57,6 +57,8 @@ const MAX_LEVERAGE = 4;
 const STOP_LOSS_FRACTION = 0.8;
 let replayCandles = [];
 let g = { balance: 10000, pnl: 0, wins: 0, losses: 0, idx: 0, positions: [], history: [], speed: 1000, paused: false, pid: 0, loop: null };
+let replaySource = 'historic'; // 'historic' | 'live' — which data feeds the practice ledger
+let liveReplayTimer = null;
 
 const symbolForm = document.getElementById('symbol-form');
 const symbolInput = document.getElementById('symbol-input');
@@ -166,14 +168,26 @@ function setMode(m) {
   if (mode === m) return;
   clearInterval(live.refreshTimer); live.refreshTimer = null;
   clearInterval(g.loop); g.loop = null;
+  clearInterval(liveReplayTimer); liveReplayTimer = null;
   document.querySelector('.end-screen')?.remove();
 
   mode = m;
+  replaySource = 'historic';
   document.getElementById('mode-live').classList.toggle('active', m === 'live');
   document.getElementById('mode-replay').classList.toggle('active', m === 'replay');
-  document.getElementById('controls').classList.toggle('hidden', m === 'live');
+  document.querySelectorAll('.replay-only').forEach(el => el.classList.toggle('hidden', m !== 'replay'));
+  document.getElementById('replay-src-historic').classList.add('active');
+  document.getElementById('replay-src-live').classList.remove('active');
 
   if (m === 'live') loadLive(); else loadReplay();
+}
+
+function setReplaySource(src) {
+  if (mode !== 'replay' || replaySource === src) return;
+  replaySource = src;
+  document.getElementById('replay-src-historic').classList.toggle('active', src === 'historic');
+  document.getElementById('replay-src-live').classList.toggle('active', src === 'live');
+  loadReplay();
 }
 
 symbolForm.addEventListener('submit', (e) => {
@@ -333,11 +347,20 @@ async function closeLivePosition(sym) {
 let R = { open: null, prev: null, high: null, low: null, close: null, dayLabel: '', currency: 'USD' };
 
 async function loadReplay() {
-  setStatus('Henter historisk dag …');
-  clearInterval(g.loop);
+  clearInterval(g.loop); g.loop = null;
+  clearInterval(liveReplayTimer); liveReplayTimer = null;
   document.querySelector('.end-screen')?.remove();
   amountInput.disabled = false;
   document.querySelectorAll('.btn-long, .btn-short').forEach(b => b.disabled = false);
+  document.getElementById('controls').classList.toggle('hidden', replaySource === 'live');
+  document.getElementById('end-session-btn').classList.toggle('hidden', replaySource !== 'live');
+
+  if (replaySource === 'live') return loadReplayLive();
+  return loadReplayHistoric();
+}
+
+async function loadReplayHistoric() {
+  setStatus('Henter historisk dag …');
   try {
     const [candles, quote] = await Promise.all([
       fetchJSON(`/api/replay/${symbol}`),
@@ -363,6 +386,58 @@ async function loadReplay() {
   } catch (e) {
     setStatus(`<span class="err">Kunne ikke hente historik for ${esc(symbol)}: ${esc(e.message)}</span>`);
   }
+}
+
+async function loadReplayLive() {
+  setStatus('Henter live-data …');
+  try {
+    const quote = await fetchJSON(`/api/quote/${symbol}`);
+    R.currency = quote.currency || 'USD';
+    let candles = [];
+    try { candles = await fetchJSON(`/api/replay/${symbol}?day=${todayStr()}`); } catch (e) { /* not open yet */ }
+    if (!candles.length) {
+      const now = new Date().toISOString();
+      candles = [{ t: now, o: quote.price, h: quote.price, l: quote.price, c: quote.price }];
+    }
+    replayCandles = candles;
+    R.open = replayCandles[0].o;
+    R.prev = quote.prev_close;
+    R.dayLabel = 'i dag (live)';
+
+    g = { balance: 10000, pnl: 0, wins: 0, losses: 0, idx: replayCandles.length - 1, positions: [], history: [], speed: 1000, paused: false, pid: 0, loop: null };
+    document.getElementById('asset-ticker').textContent = symbol;
+    document.getElementById('brand-sub').textContent = 'REPLAY · LIVE I DAG';
+    document.getElementById('asset-full').textContent = `Øvelseskonto · ${fmtMoney0(10000, R.currency)} · opdateres i realtid, ikke din rigtige konto`;
+    setStatus('<span class="warn">Kurser er ca. 15 min. forsinkede (gratis data)</span>');
+    renderReplayUI();
+    drawChart();
+    liveReplayTimer = setInterval(pollReplayLive, 20000);
+  } catch (e) {
+    setStatus(`<span class="err">Kunne ikke hente ${esc(symbol)}: ${esc(e.message)}</span>`);
+  }
+}
+
+async function pollReplayLive() {
+  try {
+    let candles = await fetchJSON(`/api/replay/${symbol}?day=${todayStr()}`).catch(() => []);
+    if (candles.length) {
+      replayCandles = candles;
+    } else {
+      const quote = await fetchJSON(`/api/quote/${symbol}`);
+      replayCandles.push({ t: new Date().toISOString(), o: quote.price, h: quote.price, l: quote.price, c: quote.price });
+    }
+    g.idx = replayCandles.length - 1;
+    checkStopLossReplay();
+    renderReplayUI();
+    drawChart();
+  } catch (e) { /* keep showing last known data */ }
+}
+
+function endLiveReplaySession() {
+  clearInterval(liveReplayTimer); liveReplayTimer = null;
+  R.close = curPrice();
+  autoCloseAllReplay();
+  showEnd();
 }
 
 function curPrice() { return replayCandles[g.idx].c; }
@@ -400,7 +475,7 @@ function openTrade(direction) {
 
   // Replay: purely local, disposable ledger.
   if (amount > g.balance) { notif('Ikke nok kapital!', 'loss'); return; }
-  if (g.idx >= replayCandles.length - 1) { notif('Dagen er slut!', 'info'); return; }
+  if (replaySource === 'historic' && g.idx >= replayCandles.length - 1) { notif('Dagen er slut!', 'info'); return; }
   const price = curPrice();
   g.positions.push({ id: ++g.pid, dir: direction, amount, leverage, entryPrice: price, openIdx: g.idx, exposure: amount * leverage });
   g.balance -= amount;
@@ -461,11 +536,17 @@ function renderReplayUI() {
   document.getElementById('ks-chg').textContent = fmtPct(dayPct);
 
   document.getElementById('clock').textContent = fmtClock(new Date(replayCandles[g.idx].t).getTime(), exchangeTZ(symbol));
-  document.getElementById('prog-fill').style.width = `${(g.idx / (replayCandles.length - 1)) * 100}%`;
-  document.getElementById('candle-info').textContent = `${g.idx + 1} / ${replayCandles.length}`;
   const statusEl = document.getElementById('mkt-status');
-  if (g.idx >= replayCandles.length - 1) { statusEl.textContent = 'LUKKET'; statusEl.className = 'market-status closed'; }
-  else { statusEl.textContent = 'ÅBENT'; statusEl.className = 'market-status open'; }
+  if (replaySource === 'live') {
+    document.getElementById('prog-fill').style.width = '100%';
+    document.getElementById('candle-info').textContent = `${replayCandles.length} min-stænger i dag`;
+    statusEl.textContent = 'LIVE'; statusEl.className = 'market-status open';
+  } else {
+    document.getElementById('prog-fill').style.width = `${(g.idx / (replayCandles.length - 1)) * 100}%`;
+    document.getElementById('candle-info').textContent = `${g.idx + 1} / ${replayCandles.length}`;
+    if (g.idx >= replayCandles.length - 1) { statusEl.textContent = 'LUKKET'; statusEl.className = 'market-status closed'; }
+    else { statusEl.textContent = 'ÅBENT'; statusEl.className = 'market-status open'; }
+  }
 
   document.getElementById('hbal').textContent = fmtMoney0(g.balance, R.currency);
   const pnlEl = document.getElementById('hpnl');
@@ -558,7 +639,7 @@ function togglePause() {
 }
 
 function seekTo(e) {
-  if (mode === 'live') return;
+  if (mode === 'live' || replaySource === 'live') return;
   const x = e.offsetX / document.getElementById('prog-wrap').offsetWidth;
   g.idx = Math.max(0, Math.min(replayCandles.length - 1, Math.floor(x * (replayCandles.length - 1))));
   renderReplayUI();

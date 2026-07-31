@@ -24,6 +24,9 @@
   <span class="ctrl-label">TILSTAND:</span>
   <button class="src-btn active" id="mode-live" onclick="setMode('live')">Live-handel</button>
   <button class="src-btn" id="mode-replay" onclick="setMode('replay')">Replay-træning</button>
+  <span class="sep replay-only hidden" id="replay-src-sep"></span>
+  <button class="src-btn replay-only hidden active" id="replay-src-historic" onclick="setReplaySource('historic')">Historisk dag</button>
+  <button class="src-btn replay-only hidden" id="replay-src-live" onclick="setReplaySource('live')">Live i dag</button>
   <span class="sep"></span>
   <form id="symbol-form">
     <input type="text" id="symbol-input" placeholder="Ticker, fx AAPL eller DANSKE.CO" autocomplete="off" value="AAPL">
@@ -58,6 +61,7 @@
       </div>
       <div class="market-status open" id="mkt-status">–</div>
       <div style="font-size:10px;color:var(--muted);" id="candle-info">–</div>
+      <button class="ctrl-btn hidden" id="end-session-btn" onclick="endLiveReplaySession()">Afslut session</button>
     </div>
 
     <div class="controls" id="controls">
